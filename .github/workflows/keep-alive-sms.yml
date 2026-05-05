@@ -1,0 +1,60 @@
+name: Keep 2nr numbers alive
+
+on:
+  schedule:
+    # Runs every day at 23:00 UTC. The script itself decides whether each
+    # number is due (>= KEEP_ALIVE_HOURS since last send), so daily checks are
+    # cheap and resilient if a run is skipped.
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Send to everyone now, ignoring the timer"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write   # needed to commit updated state/last_sent.json
+
+concurrency:
+  group: keep-alive-sms
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run keep-alive sender
+        env:
+          BIRD_ACCESS_KEY: ${{ secrets.BIRD_ACCESS_KEY }}
+          WORKSPACE_ID:    ${{ secrets.WORKSPACE_ID }}
+          CHANNEL_ID:      ${{ secrets.CHANNEL_ID }}
+          RECIPIENTS:      ${{ secrets.RECIPIENTS }}
+          MESSAGE_TEXT:    ${{ vars.MESSAGE_TEXT || 'ping' }}
+          KEEP_ALIVE_HOURS: ${{ vars.KEEP_ALIVE_HOURS || '71' }}
+          FORCE: ${{ github.event.inputs.force == 'true' && '1' || '0' }}
+        run: python keep_alive.py
+
+      - name: Commit updated state
+        run: |
+          if [ -n "$(git status --porcelain state/last_sent.json)" ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state/last_sent.json
+            git commit -m "chore: update SMS keep-alive state [skip ci]"
+            git push
+          else
+            echo "No state changes to commit."
+          fi
