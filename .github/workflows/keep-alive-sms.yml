@@ -2,10 +2,11 @@ name: Keep 2nr numbers alive
 
 on:
   schedule:
-    # Runs every day at 23:00 UTC. The script itself decides whether each
-    # number is due (>= KEEP_ALIVE_HOURS since last send), so daily checks are
-    # cheap and resilient if a run is skipped.
-    - cron: "0 23 * * *"
+    # Every 6 hours. The script per-number timer (KEEP_ALIVE_HOURS) decides
+    # whether to actually send. With a 6h cadence + 65h threshold, even if
+    # GitHub delays a run by ~3h, the message still goes out before the 72h
+    # 2nr expiry window.
+    - cron: "0 */6 * * *"
   workflow_dispatch:
     inputs:
       force:
